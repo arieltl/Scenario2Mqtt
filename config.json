@@ -1,0 +1,12 @@
+{
+	"ifsei":{
+		"host": "0.0.0.0",
+		"port": 28000,
+	},
+	"mqttBroker":{
+		"host": "0.0.0.0",
+		"port": 1883,
+		"username": "username",
+		"password": "password"
+	}
+}

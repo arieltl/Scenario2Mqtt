@@ -1,1 +1,1 @@
-# Scnerio2mqtt
+# Scenario2Mqtt

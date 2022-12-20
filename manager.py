@@ -33,9 +33,25 @@ class Manager:
 	def loop(self):
 		self.mqtt.loop()
 		msg = self.telnet.read()
-		if msg is not None and msg.startswith("*D"):
+		if msg is not None and msg.startswith("*D") and "z" in msg.lower():
+			module = int(msg[1:3])
+			zones_data = msg.lower().split("z")[1:]
+			for zone_data in zones_data:
+				zone = zone_data[0]
+				brightness = int(zone_data[1:])
+				self.modules[module].state[zone] = {"brightness": brightness,"state": "ON" if brightness > 0 else "OFF"}
+				self.mqtt.publish(f"ifsei/{module}-{zone}/state", json.dumps(self.modules[module].state[zone]))
+				
 			
 		
 	def on_message(self, msg):
 		print(msg.topic+" "+str(msg.payload))
+		if msg.topic.startswith("ifsei/"):
+			module, zone = msg.topic.split("/")[1].split("-")
+			data = json.loads(msg.payload)
+			if data["state"] == "ON":
+				self.telnet.write(f"$D{module:02d}Z{zone}{self.modules[module].state[zone]['brightness']:02d}T1")
+			else:
+				self.telnet.write(f"$D{module:02d}Z{zone}00T1")
+
 		

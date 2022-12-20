@@ -49,9 +49,13 @@ class Manager:
 		if msg.topic.startswith("ifsei/"):
 			module, zone = msg.topic.split("/")[1].split("-")
 			data = json.loads(msg.payload)
-			if data["state"] == "ON":
-				self.telnet.write(f"$D{module:02d}Z{zone}{self.modules[module].state[zone]['brightness']:02d}T1")
-			else:
-				self.telnet.write(f"$D{module:02d}Z{zone}00T1")
-
+			if "brightness" in data:
+				self.modules[module].state[zone]["brightness"] = data["brightness"]
+			if "state" in data:
+				self.modules[module].state[zone]["state"] = data["state"]
+				if data["state"] == "ON":
+					self.telnet.write(f"$D{module:02d}Z{zone}{self.modules[module].state[zone]['brightness']:02d}T1")
+				else:
+					self.telnet.write(f"$D{module:02d}Z{zone}00T1")
+			
 		

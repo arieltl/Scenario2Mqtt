@@ -4,13 +4,13 @@ import json
 
 
 
-class MqttManger():
+class MqttManager():
 	def __init__(self,callback) -> None:
 		with open('config.json') as f:
+			# print(json.loads(f))
 			config = json.load(f)["mqttBroker"]
-		def on_connect(self,client, userdata, flags, rc):
+		def on_connect(client, userdata, flags, rc):
 			print("Connected with result code "+str(rc))
-			client.subscribe("$SYS/#")
 		self.client = mqtt.Client()
 		self.client.on_connect = on_connect
 		self.client.on_message = self.on_message
@@ -28,4 +28,6 @@ class MqttManger():
 		self.client.subscribe(topic)
 	
 	def publish(self, topic, payload):
-		self.client.publish(topic, payload)
+		self.client.publish(topic, payload,qos=1,retain=True)
+	def loop(self):
+		self.client.loop()

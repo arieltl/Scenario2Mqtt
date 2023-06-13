@@ -1,49 +1,85 @@
 from mqtt import MqttManager
 from telnetManager import TelnetManager
+from module import *
 import json
 
 class Manager:
-	def __init__(self, modules) -> None:
-		self.modules = {module.id: module for module in modules}
+	def __init__(self, modules:Module) -> None:
+		self.modules : dict[int,Module] = {module.id: module for module in modules}
 		self.mqtt = MqttManager(self.on_message)
 		self.telnet = TelnetManager()
 		for modId in self.modules:
 			module = self.modules[modId]
-			for zone in module.zones:
+			for zone in module.zones.values():
 				#publish home assistant auto discovery light json mode unique id = modId+zone
 				#subscribe to modId+zone
-				self.mqtt.publish(f"homeassistant/light/{modId}-{zone}/config", json.dumps({
+				zone_n = zone.id
+				if isinstance(zone, BlindsZone):
+					module_config = {
+						"name": f"Blinds {modId} {zone_n}",
+						"command_topic": f"ifsei/{modId}-{zone_n}/set",
+						"state_topic": f"ifsei/{modId}-{zone_n}/state",
+						"position_topic": f"ifsei/{modId}-{zone_n}/position",
+						"payload_open": "open",
+						"payload_close": "close",
+						"payload_stop": "stop",
+						"state_stopped": "stopped",
+						"state_opening": "opening",
+						"state_closing": "closing",
+						"optimistic": False,
+						"unique_id":f"blinds-{modId}-{zone_n}",
+						"qos": 2,
+						"device": {
+							"identifiers": f"blinds-{modId}-{zone_n}",
+							"name": "Blinds Device" ,
+							"model": "Blinds Channel",
+							"manufacturer": "Blinds"
+						}
+					}
+					self.mqtt.publish(f"homeassistant/cover/{modId}-{zone_n}/config", module_config)
+					self.mqtt.publish(f"ifsei/{modId}-{zone_n}/position", 50)
+					self.mqtt.subscribe(f"ifsei/{modId}-{zone_n}/set")
+					continue
+
+				module_config = {
 					"schema": "json",
-					"name": f"Scenario {modId} {zone}",
-					"state_topic": f"ifsei/{modId}-{zone}/state",
-					"command_topic": f"ifsei/{modId}-{zone}/set",
-					"brightness": True,
-					"unique_id":f"scenario-{modId}-{zone}",
-					"brightness_scale": 63,
+					"name": f"Scenario {modId} {zone_n}",
+					"state_topic": f"ifsei/{modId}-{zone_n}/state",
+					"command_topic": f"ifsei/{modId}-{zone_n}/set",
+					"unique_id":f"scenario-{modId}-{zone_n}",
+					"qos": 2,
 					"device": {
-						"identifiers": f"scenario-{modId}-{zone}",
-						"name": "Scenario Light" ,
-						"model": "Dimmer Channel",
+						"identifiers": f"scenario-{modId}-{zone_n}",
+						"name": "Scenario Device" ,
+						"model": "Switch Channel",
 						"manufacturer": "Scenario"
 					}
-				}))
-				self.mqtt.subscribe(f"ifsei/{modId}-{zone}/set")
-				self.mqtt.subscribe(f"ifsei/{modId}-{zone}/state")
+				}
+				#check if zone is dimmable and set brightness to true and brightness_scale to 63
+				if isinstance(zone, DimmerZone):
+					module_config["brightness"] = True
+					module_config["brightness_scale"] = 63
+					module_config["device"]["model"] = "Dimmer Channel"
+				
+				self.mqtt.publish(f"homeassistant/light/{modId}-{zone_n}/config", module_config)
+				self.mqtt.subscribe(f"ifsei/{modId}-{zone_n}/set")
+				
 
 
 	def loop(self):
 		self.mqtt.loop()
 		msg = self.telnet.read()
+		print(msg)
 		if msg is not None and msg.startswith("*D") and "z" in msg.lower():
-			module = int(msg[1:3])
+			module = int(msg[2:4])
 			if module not in self.modules:
 				return
-			zones_data = msg.lower().split("z")[1:]
-			for zone_data in zones_data:
-				zone = zone_data[0]
-				brightness = int(zone_data[1:])
-				self.modules[module].state[zone] = {"brightness": brightness,"state": "ON" if brightness > 0 else "OFF"}
-				self.mqtt.publish(f"ifsei/{module}-{zone}/state", json.dumps(self.modules[module].state[zone]))
+			
+			zones_data = self.modules[module].process_telnet_msg(msg)
+			for zone in zones_data:
+				print(zone)
+				self.mqtt.publish(f"ifsei/{module}-{zone}/state", self.modules[module].zones[zone].state)
+			
 				
 			
 		
@@ -51,18 +87,12 @@ class Manager:
 		print(msg.topic+" "+str(msg.payload))
 		if msg.topic.startswith("ifsei/"):
 			module, zone = [int(n) for n in msg.topic.split("/")[1].split("-")]
-			data = json.loads(msg.payload)
-			print(data)
-			if "brightness" in data:
-				self.modules[module].state[zone]["brightness"] = data["brightness"]
-			if "state" in data:
-				self.modules[module].state[zone]["state"] = data["state"]
-				if data["state"] == "ON":
-					self.telnet.write(f"$D{module:02d}Z{zone}{self.modules[module].state[zone]['brightness']:02d}T1")
-				else:
-					self.telnet.write(f"$D{module:02d}Z{zone}00T1")
+			telnet_msg = self.modules[module].process_mqtt_msg(msg.payload.decode(), zone)
+			if telnet_msg != "":
+				self.telnet.write(telnet_msg)
 			if msg.topic.endswith("state"):
 				self.mqtt.client.unsubscribe(msg.topic)
-			self.mqtt.publish(f"ifsei/{module}-{zone}/state", json.dumps(self.modules[module].state[zone]))
+			
+			self.mqtt.publish(f"ifsei/{module}-{zone}/state", self.modules[module].zones[zone].state)
 			
 		

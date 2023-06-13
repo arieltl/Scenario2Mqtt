@@ -3,7 +3,6 @@ import json
 
 
 
-
 class MqttManager():
 	def __init__(self,callback) -> None:
 		with open('config.json') as f:
@@ -28,6 +27,6 @@ class MqttManager():
 		self.client.subscribe(topic)
 	
 	def publish(self, topic, payload):
-		self.client.publish(topic, payload,qos=1,retain=True)
+		self.client.publish(topic, json.dumps(payload) if isinstance(payload,dict) else payload,qos=2,retain=True)
 	def loop(self):
 		self.client.loop()
